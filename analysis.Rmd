@@ -22,11 +22,11 @@ knitr::opts_chunk$set(
   collapse = TRUE,
   comment = "#>",
   #root.dir = root.dir
-  fig.height = 15,
-  fig.width = 16
+  fig.height = 6,
+  fig.width = 7.00787 #178mm
 )  
 knitr::opts_knit$set(#root.dir = root.dir, 
-                     dpi = 300)  
+                     dpi = 350)  
 
 library(data.table)
 library(ggplot2)
@@ -172,18 +172,22 @@ The top 12 headers account for ~ 47% of all summary statistic files. We can see 
 ```{r}
 #wrap headers to make them readable
 #issue with first entry and wrap text since it has "\" so using
-top12[,plot_header:=str_wrap(iconv(enc2utf8(top12$header),sub="byte"), 
-                              width = 50)]
-
+top12[,plot_header:=str_wrap(iconv(enc2utf8(header),sub="byte"), 
+                              width = 45)]
+#Have to manually wrap following since there are no spaces: "markername,allele1,allele2,effect,stderr,p_value,direction,chr,bp" 
+top12[header=="markername,allele1,allele2,effect,stderr,p_value,direction,chr,bp",
+      plot_header:="markername,allele1,allele2,effect,\nstderr,p_value,direction,chr,bp"]
+top12[header=="chromosome rs_id markername allele_1 allele_2\nFreq_Allele1_HapMapCEU effect stderr p_value\nN",
+      plot_header:="chromosome rs_id markername allele_1 allele_2\nFreq_Allele1_HapMapCEU effect stderr p_value N"]
 ggplot(data=top12,
        aes(x = reorder(plot_header, counts),y = counts, fill=counts))+
   geom_bar(stat="identity")+
   geom_text(aes(label = scales::percent((counts/sum(dt_headers$counts)))),
-              hjust = -0.05)+
+              hjust = 1.2,size=3.5,colour="lightgrey")+
   labs(y= "Number of GWAS with this header", x = "Summary Statistics Headers") +
   theme_cowplot()+
-  theme(axis.text = element_text(size=12), axis.title = element_text(size=12),
-          legend.text=element_text(size=10),legend.title=element_text(size=12))+
+  theme(axis.text = element_text(size=8), axis.title = element_text(size=10),
+          legend.text=element_text(size=8),legend.title=element_text(size=10))+
   scale_fill_continuous(high = "#132B43", low = "#56B1F7")+
   coord_flip()
 ```
@@ -191,12 +195,81 @@ ggplot(data=top12,
 We can then save this plot:
 
 ```{r Save plot}
+#save as .pdf and .tiff
 ggplot2::ggsave(filename = here::here("plots/SumstatsFormats.pdf"),
-                height = 15,
-                width = 16,
-                dpi = 300)
+                height = 6,
+                width = 7.00787, #178mm
+                dpi = 350,
+                units="in")
+ggplot2::ggsave(filename = here::here("plots/SumstatsFormats.tiff"),
+                height = 6,
+                width = 7.00787, #178mm
+                dpi = 350,
+                units="in")
 ```
 
+
+## Most common Sumstat formats - sample files
+
+Again if you ran the gwas-download script, the following section of code will pull down an example summary statistics file from one of the studies for each of the 12 most common formats. This can be used to inspect and test integration methods: see [MungeSumstats](https://github.com/neurogenomics/MungeSumstats) for an R based solution to standardisation. 
+
+```
+top12_sumstats <- top12$header
+#get a directory for each so we can get some rows of data
+top12_sumstats_example <-
+  lapply(top12_sumstats, function(x)
+    names(headers_combined[headers_combined==x][1]))
+
+#.zips have a count beside (all are .zip1 remove the 1)
+top12_sumstats_example<-gsub(".zip1",".zip",top12_sumstats_example)
+top12_sumstats_example<-gsub(".zip2",".zip",top12_sumstats_example)
+
+names(top12_sumstats_example) <- top12_sumstats
+
+
+#get 5 rows of data for each
+top12_sumstats_example_data <- vector(mode="list",
+                                      length=length(top12_sumstats_example))
+names(top12_sumstats_example_data) <- as.character(top12_sumstats_example)
+count <- 1
+
+for(example_i in top12_sumstats_example){
+  extension <-
+    substr(example_i,nchar(example_i)-3,nchar(example_i))
+  if(extension==".zip"){#if .zip
+    items_file_i<-unzip(example_i,list=TRUE)
+    if(length(grep(".gz$",items_file_i$Name[1]))!=0 ||
+       length(grep(".csv$",items_file_i$Name[2]))!=0){ #can deal with .gz
+      row_ind <- 1
+      #take second if csv
+      if(length(grep(".csv$",items_file_i$Name[2])))
+        row_ind <- 2
+      top12_sumstats_example_data[[count]]<-
+        readLines(unzip(example_i,files=items_file_i[row_ind,1]),n=6)
+    }
+    else{#or .txt
+      items_file_i<-items_file_i[grep(".txt$",items_file_i$Name),]
+      top12_sumstats_example_data[[count]]<-
+        readLines(unzip(example_i,files=items_file_i[1,1]),n=6)
+    }
+  }
+  else{#.txt or if .gz
+    top12_sumstats_example_data[[count]]<-readLines(example_i,n=6)
+  }
+  count <- count + 1
+}
+
+top12_sumstats_example_data
+save(top12_sumstats_example_data,
+     file="data/top12_sumstats_header_format_and_data.RData")
+```
+
+We can load and inspect these files:
+```{r}
+load(file="data/top12_sumstats_header_format_and_data.RData")
+
+print(top12_sumstats_example_data[1])
+```
 
 ## Future work
 
